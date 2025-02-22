@@ -54,6 +54,13 @@ def map_and_transfer_data(hospital_file, lg_file, output_file, column_map, numer
     # LG결과.xlsx 로드
     wb_lg = openpyxl.load_workbook(lg_file)
     ws_lg = wb_lg.active
+
+    # Delete all rows from row 4 onwards
+    ws_lg.delete_rows(4, ws_lg.max_row)
+
+    # Save the cleared file
+    wb_lg.save(output_file)
+    print(f"All data from row 4 onward has been deleted in {output_file}.")
     
     # 병원결과 헤더 (3번째 행)
     hospital_headers = {cell.value: col_idx for col_idx, cell in enumerate(ws_hospital[3], start=1) if cell.value}
