@@ -274,12 +274,45 @@ class MainWindow(QMainWindow):
             return
 
         opinion_headers = {cell.value: col_idx for col_idx, cell in enumerate(ws_opinion[2], 1) if cell.value}
+        lg_headers = {cell.value: col_idx for col_idx, cell in enumerate(ws_lg[3], 1) if cell.value}
+
+        # 필수 열 확인
         ho_no_col = opinion_headers.get("HO_NO")
         emp_no_col = lg_headers.get("EMP_NO")
+        jumin_col = opinion_headers.get("jumin")
+        ssn_col = lg_headers.get("SSN")
 
-        if not ho_no_col or not emp_no_col:
-            self.log("필수 열 'HO_NO' 또는 'EMP_NO'가 없습니다.")
+        if not all([ho_no_col, emp_no_col, jumin_col, ssn_col]):
+            missing_cols = []
+            if not ho_no_col: missing_cols.append("HO_NO")
+            if not emp_no_col: missing_cols.append("EMP_NO")
+            if not jumin_col: missing_cols.append("jumin")
+            if not ssn_col: missing_cols.append("SSN")
+            self.log(f"오류: 다음 필수 열이 없습니다: {', '.join(missing_cols)}")
             return
+
+        # HO_NO와 EMP_NO, jumin과 SSN을 결합한 키로 매핑
+        ho_no_jumin_dict = {
+            f"{str(row[ho_no_col - 1])}|{str(row[jumin_col - 1])}": row 
+            for row in ws_opinion.iter_rows(min_row=3, values_only=True) 
+            if row[ho_no_col - 1] is not None and row[jumin_col - 1] is not None
+        }
+        emp_no_ssn_dict = {
+            f"{str(row[emp_no_col - 1].value)}|{str(row[ssn_col - 1].value)}": row_idx 
+            for row_idx, row in enumerate(ws_lg.iter_rows(min_row=4), 4) 
+            if row[emp_no_col - 1].value is not None and row[ssn_col - 1].value is not None
+        }
+
+        common_keys = set(ho_no_jumin_dict.keys()) & set(emp_no_ssn_dict.keys())
+        self.log(f"공통 데이터 개수 (HO_NO=EMP_NO AND jumin=SSN): {len(common_keys)}")
+
+        # 매칭되지 않은 항목 확인
+        unmatched_ho_jumin = set(ho_no_jumin_dict.keys()) - common_keys
+        unmatched_emp_ssn = set(emp_no_ssn_dict.keys()) - common_keys
+        if unmatched_ho_jumin:
+            self.log(f"경고: {len(unmatched_ho_jumin)}개의 HO_NO|jumin 조합이 매칭되지 않음: {list(unmatched_ho_jumin)[:5]}...")
+        if unmatched_emp_ssn:
+            self.log(f"경고: {len(unmatched_emp_ssn)}개의 EMP_NO|SSN 조합이 매칭되지 않음: {list(unmatched_emp_ssn)[:5]}...")
 
         opinion_mapping = {
             opinion_headers.get(col): lg_headers.get(self.opinion_columns[col])
@@ -287,16 +320,10 @@ class MainWindow(QMainWindow):
             if col in opinion_headers and self.opinion_columns[col] in lg_headers
         }
 
-        ho_no_dict = {str(row[ho_no_col - 1]): row for row in ws_opinion.iter_rows(min_row=3, values_only=True) if row[ho_no_col - 1] is not None}
-        emp_no_dict = {str(row[emp_no_col - 1].value): row_idx for row_idx, row in enumerate(ws_lg.iter_rows(min_row=4), 4) if row[emp_no_col - 1].value is not None}
-
-        common_keys = set(ho_no_dict.keys()) & set(emp_no_dict.keys())
-        self.log(f"공통 데이터 개수: {len(common_keys)}")
-
         self.progress_bar.setMaximum(len(common_keys))
         for i, key in enumerate(common_keys):
-            ho_no_row = ho_no_dict[key]
-            lg_row_idx = emp_no_dict[key]
+            ho_no_row = ho_no_jumin_dict[key]
+            lg_row_idx = emp_no_ssn_dict[key]
             for opinion_col, lg_col in opinion_mapping.items():
                 value = ho_no_row[opinion_col - 1]
                 ws_lg.cell(row=lg_row_idx, column=lg_col, value=value)
